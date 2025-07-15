@@ -1,0 +1,16 @@
+[Unit]
+Description=GPU Dashboard Service
+After=network.target
+
+[Service]
+User=<YOUR_USER>
+Group=<YOUR_USER>
+WorkingDirectory=/home/<YOUR_USER>/Project/GPU-Monitor/gpu_dashboard/
+ExecStart=/usr/bin/python3 app.py
+Restart=on-failure
+RestartSec=5
+#StandardOutput=syslog  # Optional: Send output to syslog
+#StandardError=syslog  # Optional: Send errors to syslog
+
+[Install]
+WantedBy=multi-user.target

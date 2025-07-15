@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPU Server Status Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Tailwind gray-900 */
+            color: #f3f4f6; /* Tailwind gray-100 */
+        }
+        .card {
+            background-color: #1f2937; /* Tailwind gray-800 */
+            border: 1px solid #374151; /* Tailwind gray-700 */
+            border-radius: 0.75rem; /* Tailwind rounded-xl */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .progress-bar-bg {
+            background-color: #374151; /* Tailwind gray-700 */
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            text-align: center;
+            color: white;
+            font-weight: 500;
+            font-size: 0.75rem; /* text-xs */
+            line-height: 1.25rem; /* leading-5, adjust if progress bar height changes */
+            transition: width 0.3s ease-in-out;
+            border-radius: 0.375rem; /* Tailwind rounded-md */
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #10b981; /* Tailwind green-500 */ }
+        .status-offline { background-color: #ef4444; /* Tailwind red-500 */ }
+        .status-error { background-color: #f59e0b; /* Tailwind amber-500 */ }
+        .gpu-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem; /* Tailwind gap-6 */
+        }
+        .gpu-card {
+            padding: 1rem; /* Tailwind p-4 */
+            border: 1px solid #4b5563; /* Tailwind gray-600 */
+            border-radius: 0.5rem; /* Tailwind rounded-lg */
+        }
+        .header {
+            border-bottom: 1px solid #374151; /* Tailwind gray-700 */
+            padding-bottom: 1rem; /* Tailwind pb-4 */
+            margin-bottom: 1.5rem; /* Tailwind mb-6 */
+        }
+        .loader {
+            border: 4px solid #374151; /* Tailwind gray-700 */
+            border-top: 4px solid #3b82f6; /* Tailwind blue-500 */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-6 lg:p-8">
+    <div class="container mx-auto max-w-7xl">
+        <header class="header text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-white">CYUT M-416 GPU Server Status Dashboard</h1>
+            <p class="text-gray-400 mt-2">Real-time monitoring of GPU utilization and memory usage.</p>
+            <p class="text-sm text-gray-500 mt-1">Last updated: <span id="lastUpdated">Never</span></p>
+        </header>
+
+        <div id="statusContainer" class="space-y-8">
+            </div>
+        <div id="loadingIndicator" class="text-center py-10">
+            <div class="loader"></div>
+            <p class="text-gray-400">Fetching data...</p>
+        </div>
+    </div>
+
+    <script>
+        // How often to refresh the data (in milliseconds)
+        const REFRESH_INTERVAL = 5000; // 5 seconds
+
+        // DOM elements
+        const statusContainer = document.getElementById('statusContainer');
+        const lastUpdatedElement = document.getElementById('lastUpdated');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        /**
+         * Creates a progress bar element.
+         * @param {number} percentage - The percentage value for the progress bar.
+         * @param {string} text - Text to display on the progress bar.
+         * @param {string} colorClass - Tailwind CSS class for the progress bar color.
+         * @returns {string} HTML string for the progress bar.
+         */
+        function createProgressBar(percentage, text, colorClass = 'bg-blue-600') {
+            const cappedPercentage = Math.min(Math.max(percentage, 0), 100); // Ensure percentage is between 0 and 100
+            return `
+                <div class="progress-bar-bg h-5 w-full">
+                    <div class="progress-bar ${colorClass}" style="width: ${cappedPercentage}%; line-height: 1.25rem;">
+                        ${text}
+                    </div>
+                </div>
+            `;
+        }
+
+        /**
+         * Renders the data for all servers onto the page.
+         * @param {Array} serversData - Array of server data objects.
+         */
+        function renderData(serversData) {
+            statusContainer.innerHTML = ''; // Clear previous content
+            loadingIndicator.style.display = 'none'; // Hide loader
+
+            if (!serversData || serversData.length === 0) {
+                statusContainer.innerHTML = '<p class="text-center text-gray-400">No server data to display. Check configuration.</p>';
+                return;
+            }
+
+            serversData.forEach(server => {
+                const serverCard = document.createElement('div');
+                serverCard.className = 'card p-6'; // Tailwind p-6
+
+                let statusDotClass = 'status-offline';
+                let statusText = server.status.toUpperCase();
+                if (server.status === 'online') {
+                    statusDotClass = 'status-online';
+                } else if (server.status === 'error') {
+                    statusDotClass = 'status-error';
+                }
+
+                let serverContentHtml = `
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl sm:text-2xl font-semibold text-white">${server.name}</h2>
+                        <div class="flex items-center">
+                            <span class="status-dot ${statusDotClass}"></span>
+                            <span class="text-sm font-medium ${server.status === 'online' ? 'text-green-400' : (server.status === 'error' ? 'text-amber-400' : 'text-red-400')}">
+                                ${statusText}
+                            </span>
+                        </div>
+                    </div>
+                `;
+
+                if (server.status === 'online' && server.data && server.data.gpus) {
+                    if (server.data.gpus.length > 0) {
+                        serverContentHtml += '<div class="gpu-grid">';
+                        server.data.gpus.forEach(gpu => {
+                            const memUsagePercent = parseFloat(gpu.memory_utilization_percent.toFixed(1));
+                            const gpuUsagePercent = parseFloat(gpu.utilization_percent.toFixed(1));
+
+                            let memColor = 'bg-green-600'; // Default to green
+                            if (memUsagePercent > 90) memColor = 'bg-red-600';
+                            else if (memUsagePercent > 75) memColor = 'bg-yellow-500';
+
+                            let gpuColor = 'bg-sky-500'; // Default to sky
+                            if (gpuUsagePercent > 90) gpuColor = 'bg-red-600';
+                            else if (gpuUsagePercent > 75) gpuColor = 'bg-yellow-500';
+                            
+                            serverContentHtml += `
+                                <div class="gpu-card space-y-3">
+                                    <h3 class="text-lg font-medium text-gray-200">GPU ${gpu.gpu_index}</h3>
+                                    <div>
+                                        <p class="text-sm text-gray-400 mb-1">GPU Utilization: ${gpuUsagePercent}%</p>
+                                        ${createProgressBar(gpuUsagePercent, `${gpuUsagePercent}%`, gpuColor)}
+                                    </div>
+                                    <div>
+                                        <p class="text-sm text-gray-400 mb-1">Memory Usage: ${memUsagePercent}% (${gpu.memory_used_mib.toFixed(0)} MiB / ${gpu.memory_total_mib.toFixed(0)} MiB)</p>
+                                        ${createProgressBar(memUsagePercent, `${memUsagePercent}%`, memColor)}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        serverContentHtml += '</div>';
+                    } else {
+                        serverContentHtml += '<p class="text-gray-400">No GPUs reported for this server.</p>';
+                    }
+                } else if (server.status === 'online' && server.data && server.data.error) {
+                     serverContentHtml += `<p class="text-yellow-400">Error on server: ${server.data.error}</p>`;
+                     if(server.data.details) {
+                        serverContentHtml += `<p class="text-xs text-gray-500 mt-1">Details: ${server.data.details}</p>`;
+                     }
+                } else if (server.status !== 'online') {
+                    serverContentHtml += `<p class="text-red-400">Could not connect or fetch data: ${server.error || 'Unknown error'}</p>`;
+                    serverContentHtml += `<p class="text-xs text-gray-500 mt-1">URL: ${server.url}</p>`;
+                } else {
+                     serverContentHtml += '<p class="text-gray-400">Waiting for data or unexpected response structure...</p>';
+                }
+
+                serverCard.innerHTML = serverContentHtml;
+                statusContainer.appendChild(serverCard);
+            });
+        }
+
+        /**
+         * Fetches data from the backend /data endpoint and updates the page.
+         */
+        async function fetchDataAndUpdate() {
+            // console.log("Fetching new data...");
+            try {
+                const response = await fetch('/data');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                renderData(data);
+                lastUpdatedElement.textContent = new Date().toLocaleTimeString();
+            } catch (error) {
+                console.error("Failed to fetch or render GPU data:", error);
+                statusContainer.innerHTML = `<p class="text-center text-red-400 font-semibold">Error loading dashboard data. Check console for details. Is the backend server running?</p>`;
+                loadingIndicator.style.display = 'none'; // Hide loader on error too
+            }
+        }
+
+        // Initial data fetch when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchDataAndUpdate();
+            // Set up an interval to periodically refresh the data
+            setInterval(fetchDataAndUpdate, REFRESH_INTERVAL);
+        });
+    </script>
+</body>
+</html>
