@@ -32,6 +32,7 @@ These steps need to be performed on **all servers** you want to monitor, includi
 2.  **Install Flask:**
     Flask is required for both the exporter and the dashboard.
     ```shell
+    # Install it to the system Python
     pip install Flask
     ```
 
